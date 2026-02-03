@@ -485,11 +485,11 @@ const canteenView = {
     renderGrid(reports) {
         return `<div class="class-grid no-print">${state.classes.filter(c => this.activeShift === 0 || c.shift === this.activeShift).sort((a,b) => a.className.localeCompare(b.className, 'uk')).map(c => {
             const report = reports.find(r => r.classId === c.id);
-            const actualCount = report?.actualStudents || 0;
+            const eatingCount = (report?.eatingStudents || 0) + (report?.teacherEating ? 1 : 0);
             return `<div class="class-card ${report ? 'submitted' : 'pending'}"><div class="class-card-header"><h4>${c.className}</h4><span>${c.teacherName}</span></div>
-            ${report ? `<div class="eating-count"><p>Фактично</p><p class="count">${actualCount}</p>${report.teacherEating ? '<p class="teacher-badge">+ Вчитель</p>' : ''}</div>
+            ${report ? `<div class="eating-count"><p>Харчуються</p><p class="count">${eatingCount}</p>${report.teacherEating ? '<p class="teacher-badge">+ Вчитель</p>' : ''}</div>
             <div class="class-card-footer"><div><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> ${new Date(report.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
-            <div>${report.eatingStudents} харчується</div></div>` : '<div class="no-report">Немає заявки</div>'}</div>`;
+            <div>${report.actualStudents} / ${report.totalStudents} учнів</div></div>` : '<div class="no-report">Немає заявки</div>'}</div>`;
         }).join('')}</div>`;
     },
     renderReport(currentReports, allReports) {
@@ -498,12 +498,12 @@ const canteenView = {
         return `<div class="report-container"><div class="report-content"><div class="report-title">
             <h2>Звіт по харчуванню за ${date.toLocaleDateString('uk-UA')}</h2>
             <p>Гімназія №4 | ${this.activeShift === 0 ? 'Усі класи' : this.activeShift + ' зміна'}</p></div>
-            <div class="table-wrapper"><table><thead><tr><th>Клас</th><th>Фактично</th><th>Харчуються</th><th>Підпис</th></tr></thead><tbody>
+            <div class="table-wrapper"><table><thead><tr><th>Клас</th><th>Всього</th><th>Фактично</th><th>Харчуються</th><th>Підпис</th></tr></thead><tbody>
             ${state.classes.filter(c => this.activeShift === 0 || c.shift === this.activeShift).sort((a,b) => a.className.localeCompare(b.className, 'uk')).map(c => {
                 const r = currentReports.find(rep => rep.classId === c.id);
                 const eating = (r?.eatingStudents || 0) + (r?.teacherEating ? 1 : 0);
-                return `<tr><td>${c.className}</td><td>${r?.actualStudents || ''}</td><td>${eating || ''}</td><td></td></tr>`;
-            }).join('')}</tbody><tfoot><tr><td>Всього:</td><td>${currentReports.reduce((a,b) => a + b.actualStudents, 0)}</td>
+                return `<tr><td>${c.className}</td><td>${r?.totalStudents || ''}</td><td>${r?.actualStudents || ''}</td><td>${eating || ''}</td><td></td></tr>`;
+            }).join('')}</tbody><tfoot><tr><td>Всього:</td><td>${currentReports.reduce((a,b) => a + b.totalStudents, 0)}</td><td>${currentReports.reduce((a,b) => a + b.actualStudents, 0)}</td>
             <td>${currentReports.reduce((a,b) => a + b.eatingStudents + (b.teacherEating ? 1 : 0), 0)}</td><td></td></tr></tfoot></table></div>
             <div class="report-signature"><p>Адміністрація</p><p>Їдальня</p></div></div></div>`;
     },
@@ -513,6 +513,10 @@ const canteenView = {
         const dayTotals = new Array(days).fill(0);
         let grandTotal = 0;
         const classes = state.classes.filter(c => this.activeShift === 0 || c.shift === this.activeShift).sort((a,b) => a.className.localeCompare(b.className, 'uk'));
+        
+        // Додати клас для landscape орієнтації при друці
+        document.body.classList.add('print-landscape');
+        
         return `<div class="report-container"><div class="report-content"><div class="report-title">
             <h2>Звіт по харчуванню (місячний) - ${date.toLocaleString('uk-UA', {month: 'long', year: 'numeric'})}</h2>
             <p>Гімназія №4 | ${this.activeShift === 0 ? 'Усі класи' : this.activeShift + ' зміна'}</p></div>
@@ -524,7 +528,7 @@ const canteenView = {
                     const d = i + 1;
                     const dStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
                     const r = allReports.find(rep => rep.classId === c.id && rep.date === dStr);
-                    const val = r ? (r.eatingStudents + (r.teacherEating ? 1 : 0)) : 0;
+                    const val = r ? r.actualStudents : 0;
                     classTotal += val;
                     dayTotals[i] += val;
                     return `<td class="${val > 0 ? 'value' : 'empty'}">${val || '-'}</td>`;
@@ -534,7 +538,12 @@ const canteenView = {
             <div class="report-signature"><p>Адміністрація</p><p>Їдальня</p></div></div></div>`;
     },
     setShift(shift) { this.activeShift = shift; app.render(); },
-    setViewMode(mode) { this.viewMode = mode; app.render(); },
+    setViewMode(mode) { 
+        // Видалити клас landscape при зміні режиму
+        document.body.classList.remove('print-landscape');
+        this.viewMode = mode; 
+        app.render(); 
+    },
     setDate(date) { this.selectedDate = date; app.render(); },
     changeMonth(offset) {
         const d = new Date(this.selectedDate);
@@ -558,7 +567,7 @@ const canteenView = {
                 for (let d = 1; d <= days; d++) {
                     const dStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
                     const r = allReports.find(rep => rep.classId === c.id && rep.date === dStr);
-                    const val = r ? (r.eatingStudents + (r.teacherEating ? 1 : 0)) : 0;
+                    const val = r ? r.actualStudents : 0;
                     row.push(val.toString());
                     classTotal += val;
                     dayTotals[d-1] += val;
@@ -569,7 +578,7 @@ const canteenView = {
             });
             csv += "ВСЬОГО;" + dayTotals.join(";") + ";" + grandTotal + "\n";
         } else {
-            csv += "Клас;Фактично;Харчуються\n";
+            csv += "Клас;Всього;Фактично;Харчуються\n";
             const allReports = [...state.reports, ...state.history];
             const currentReports = allReports.filter(r => {
                 const classInfo = state.classes.find(c => c.id === r.classId);
@@ -577,8 +586,8 @@ const canteenView = {
             });
             state.classes.filter(c => this.activeShift === 0 || c.shift === this.activeShift).sort((a,b) => a.className.localeCompare(b.className, 'uk')).forEach(c => {
                 const r = currentReports.find(rep => rep.classId === c.id);
-                const total = (r?.eatingStudents || 0) + (r?.teacherEating ? 1 : 0);
-                csv += `${c.className};${r?.actualStudents || 0};${total}\n`;
+                const eating = (r?.eatingStudents || 0) + (r?.teacherEating ? 1 : 0);
+                csv += `${c.className};${r?.totalStudents || 0};${r?.actualStudents || 0};${eating}\n`;
             });
         }
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
