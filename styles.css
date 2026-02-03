@@ -1412,9 +1412,26 @@ tfoot td:nth-child(4) {
         font-size: 9px !important;
     }
 
+    /* Стандартна portrait орієнтація */
     @page {
         margin: 1.5cm;
         size: A4 portrait;
+    }
+
+    /* Landscape для місячних звітів */
+    body.print-landscape @page,
+    @page:first {
+        size: A4 landscape;
+        margin: 1cm;
+    }
+    
+    body.print-landscape .monthly-table {
+        font-size: 7px !important;
+    }
+    
+    body.print-landscape .monthly-table th,
+    body.print-landscape .monthly-table td {
+        padding: 3px 1px !important;
     }
 }
 
@@ -1458,4 +1475,26 @@ tfoot td:nth-child(4) {
         width: 100%;
         justify-content: center;
     }
+}
+
+/* Додаткові стилі для кращої сумісності друку */
+@media print {
+    /* Автоматичне landscape для wide таблиць */
+    .monthly-table {
+        max-width: 100% !important;
+    }
+    
+    /* Для Chrome/Edge */
+    @supports (-webkit-appearance: none) {
+        body.print-landscape {
+            width: 297mm;
+            min-height: 210mm;
+        }
+    }
+}
+
+/* Клас для примусової landscape орієнтації */
+.force-landscape {
+    width: 297mm !important;
+    height: 210mm !important;
 }
