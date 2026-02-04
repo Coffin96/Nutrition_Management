@@ -1354,15 +1354,11 @@ tfoot td:nth-child(4) {
     }
 
     #app,
-    .main-container,
-    .report-container,
-    .report-content {
+    .main-container {
         width: 100% !important;
         max-width: 100% !important;
-        padding: 1cm !important;
+        padding: 0 !important;
         margin: 0 !important;
-        box-shadow: none !important;
-        border: none !important;
     }
 
     table {
@@ -1406,53 +1402,64 @@ tfoot td:nth-child(4) {
         page-break-inside: avoid !important;
     }
 
-    .monthly-table th,
-    .monthly-table td {
-        padding: 3px 2px !important;
-        font-size: 8px !important;
-    }
-
-    /* Стандартна portrait орієнтація */
+    /* Стандартний друк */
     @page {
         size: A4 portrait;
         margin: 1.5cm;
     }
 
-    /* Landscape для місячних звітів через клас body */
+    /* МІСЯЧНА ТАБЛИЦЯ - rotate 90° */
     body.print-monthly-landscape {
-        width: 297mm !important;
-        height: 210mm !important;
+        overflow: visible !important;
     }
     
-    body.print-monthly-landscape @page {
-        size: A4 landscape !important;
-        margin: 0.8cm !important;
-    }
-    
-    body.print-monthly-landscape #app,
-    body.print-monthly-landscape .main-container,
-    body.print-monthly-landscape .report-container,
-    body.print-monthly-landscape .report-content {
+    body.print-monthly-landscape .report-container {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(90deg);
+        transform-origin: center center;
+        width: 277mm !important;
+        height: 190mm !important;
+        margin: 0 !important;
         padding: 0.5cm !important;
     }
     
+    body.print-monthly-landscape .report-content {
+        width: 100% !important;
+        height: 100% !important;
+        padding: 0 !important;
+    }
+    
     body.print-monthly-landscape .monthly-table {
-        font-size: 7px !important;
+        font-size: 6px !important;
         width: 100% !important;
     }
     
     body.print-monthly-landscape .monthly-table th,
     body.print-monthly-landscape .monthly-table td {
         padding: 2px 1px !important;
-        font-size: 7px !important;
+        font-size: 6px !important;
     }
     
     body.print-monthly-landscape .report-title h2 {
-        font-size: 14px !important;
+        font-size: 12px !important;
+        margin-bottom: 5px !important;
     }
     
     body.print-monthly-landscape .report-title p {
-        font-size: 10px !important;
+        font-size: 9px !important;
+        margin-bottom: 10px !important;
+    }
+    
+    body.print-monthly-landscape .report-signature {
+        margin-top: 1cm !important;
+        font-size: 8px !important;
+    }
+
+    @page {
+        size: A4 portrait !important;
+        margin: 0 !important;
     }
 }
 
