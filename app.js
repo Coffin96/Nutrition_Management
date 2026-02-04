@@ -13,6 +13,7 @@ const CONFIG = {
     AUTO_REFRESH_INTERVAL: 120000, // 2 minutes
 };
 
+
 // === Initial Data ===
 const INITIAL_CLASSES = [
     { id: '1a', className: '1-А', shift: 1, teacherName: 'Мельник О.М.', pin: '1111' },
@@ -708,11 +709,57 @@ const canteenView = {
         app.render();
     },
     printMonthly() {
-        // Додати клас для landscape
-        document.body.classList.add('print-monthly-landscape');
-        window.print();
-        // Видалити після друку
-        setTimeout(() => document.body.classList.remove('print-monthly-landscape'), 100);
+        const date = new Date(this.selectedDate);
+        const allReports = [...state.reports, ...state.history];
+        const html = this.renderMonthlyTable(date, allReports);
+        
+        // Створити окреме вікно з повернутою таблицею
+        const printWindow = window.open('', '_blank', 'width=800,height=600');
+        printWindow.document.write(`
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Місячний звіт</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; }
+        @media print {
+            @page { size: A4 landscape; margin: 0.8cm; }
+            body { margin: 0; padding: 0; }
+        }
+        @media screen {
+            body { padding: 1cm; background: #f0f0f0; }
+        }
+        .report-container { background: white; }
+        .report-content { padding: 1cm; }
+        .report-title { text-align: center; margin-bottom: 1.5rem; }
+        .report-title h2 { font-size: 18px; margin-bottom: 10px; }
+        .report-title p { font-size: 12px; color: #666; }
+        table { width: 100%; border-collapse: collapse; font-size: 8px; }
+        th, td { border: 1px solid black; padding: 3px 2px; text-align: center; }
+        th { background: #f0f0f0; font-weight: bold; }
+        .total-col { background: #e8f4f8; font-weight: bold; }
+        .value { font-weight: 500; }
+        .empty { color: #ccc; }
+        .report-signature { margin-top: 2rem; display: flex; justify-content: space-between; }
+        .report-signature p { font-size: 12px; }
+    </style>
+</head>
+<body>
+    ${html}
+    <script>
+        window.onload = function() {
+            setTimeout(function() { window.print(); }, 500);
+        };
+        window.onafterprint = function() {
+            setTimeout(function() { window.close(); }, 100);
+        };
+    </script>
+</body>
+</html>
+        `);
+        printWindow.document.close();
     },
     exportCSV() {
         let csv = "\uFEFF"; // UTF-8 BOM
