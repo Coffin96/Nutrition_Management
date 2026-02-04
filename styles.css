@@ -1408,30 +1408,51 @@ tfoot td:nth-child(4) {
 
     .monthly-table th,
     .monthly-table td {
-        padding: 4px 2px !important;
-        font-size: 9px !important;
+        padding: 3px 2px !important;
+        font-size: 8px !important;
     }
 
     /* Стандартна portrait орієнтація */
     @page {
-        margin: 1.5cm;
         size: A4 portrait;
+        margin: 1.5cm;
     }
 
-    /* Landscape для місячних звітів */
-    body.print-landscape @page,
-    @page:first {
-        size: A4 landscape;
-        margin: 1cm;
+    /* Landscape для місячних звітів через клас body */
+    body.print-monthly-landscape {
+        width: 297mm !important;
+        height: 210mm !important;
     }
     
-    body.print-landscape .monthly-table {
+    body.print-monthly-landscape @page {
+        size: A4 landscape !important;
+        margin: 0.8cm !important;
+    }
+    
+    body.print-monthly-landscape #app,
+    body.print-monthly-landscape .main-container,
+    body.print-monthly-landscape .report-container,
+    body.print-monthly-landscape .report-content {
+        padding: 0.5cm !important;
+    }
+    
+    body.print-monthly-landscape .monthly-table {
+        font-size: 7px !important;
+        width: 100% !important;
+    }
+    
+    body.print-monthly-landscape .monthly-table th,
+    body.print-monthly-landscape .monthly-table td {
+        padding: 2px 1px !important;
         font-size: 7px !important;
     }
     
-    body.print-landscape .monthly-table th,
-    body.print-landscape .monthly-table td {
-        padding: 3px 1px !important;
+    body.print-monthly-landscape .report-title h2 {
+        font-size: 14px !important;
+    }
+    
+    body.print-monthly-landscape .report-title p {
+        font-size: 10px !important;
     }
 }
 
@@ -1478,23 +1499,3 @@ tfoot td:nth-child(4) {
 }
 
 /* Додаткові стилі для кращої сумісності друку */
-@media print {
-    /* Автоматичне landscape для wide таблиць */
-    .monthly-table {
-        max-width: 100% !important;
-    }
-    
-    /* Для Chrome/Edge */
-    @supports (-webkit-appearance: none) {
-        body.print-landscape {
-            width: 297mm;
-            min-height: 210mm;
-        }
-    }
-}
-
-/* Клас для примусової landscape орієнтації */
-.force-landscape {
-    width: 297mm !important;
-    height: 210mm !important;
-}
