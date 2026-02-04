@@ -10,7 +10,7 @@ const CONFIG = {
           appId: "1:836431470907:web:950d25ce704af4c2b0171e"
     },
     ADMIN_PIN: '1312',
-    AUTO_REFRESH_INTERVAL: 120000, // 2 minutes
+    AUTO_REFRESH_INTERVAL: 60000, // 2 minutes
 };
 
 
