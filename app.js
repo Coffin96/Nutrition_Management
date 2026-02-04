@@ -84,20 +84,69 @@ const api = {
             if (!db) throw new Error('Firebase not initialized');
             const snapshot = await db.ref(`reports/${date}`).once('value');
             const data = snapshot.val();
-            return data ? Object.values(data) : [];
+            const reports = data ? Object.values(data) : [];
+            // Зберегти в LocalStorage
+            if (reports.length > 0) {
+                localStorage.setItem(`gym4_reports_${date}`, JSON.stringify(reports));
+            }
+            return reports;
         } catch (e) {
             const cached = localStorage.getItem(`gym4_reports_${date}`);
             return cached ? JSON.parse(cached) : [];
         }
     },
 
+    async getAllRecentReports(daysBack = 60) {
+        try {
+            if (!db) throw new Error('Firebase not initialized');
+            
+            // Отримати всі звіти за останні N днів
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - daysBack);
+            
+            const startDateStr = startDate.toISOString().split('T')[0];
+            const endDateStr = endDate.toISOString().split('T')[0];
+            
+            const snapshot = await db.ref('reports')
+                .orderByKey()
+                .startAt(startDateStr)
+                .endAt(endDateStr)
+                .once('value');
+            
+            const data = snapshot.val();
+            if (!data) return [];
+            
+            const allReports = [];
+            Object.keys(data).forEach(date => {
+                Object.values(data[date]).forEach(report => {
+                    allReports.push(report);
+                });
+            });
+            
+            // Зберегти в LocalStorage по датах
+            Object.keys(data).forEach(date => {
+                const dateReports = Object.values(data[date]);
+                localStorage.setItem(`gym4_reports_${date}`, JSON.stringify(dateReports));
+            });
+            
+            return allReports;
+        } catch (e) {
+            console.warn('Failed to load recent reports, using cache');
+            return [];
+        }
+    },
+
     async submitReport(report) {
         const date = report.date;
+        
+        // Оновити LocalStorage
         const existing = JSON.parse(localStorage.getItem(`gym4_reports_${date}`) || '[]');
         const filtered = existing.filter(r => !(r.classId === report.classId && r.date === report.date));
         const updated = [...filtered, report];
         localStorage.setItem(`gym4_reports_${date}`, JSON.stringify(updated));
 
+        // Синхронізувати з Firebase
         try {
             if (!db) throw new Error('Firebase not initialized');
             await db.ref(`reports/${date}/${report.classId}`).set(report);
@@ -130,16 +179,48 @@ const api = {
 // === Main App ===
 const app = {
     init() {
+        this.cleanupOldData();
         this.loadData();
         this.startAutoRefresh();
     },
 
-    async loadData() {
-        state.isLoading = true;
-        this.updateOnlineStatus(true);
-        this.render();
+    cleanupOldData() {
+        try {
+            const lastCleanup = localStorage.getItem('gym4_last_cleanup');
+            const now = Date.now();
+            const weekInMs = 7 * 24 * 60 * 60 * 1000;
+            
+            // Очищення раз на тиждень
+            if (lastCleanup && (now - parseInt(lastCleanup)) < weekInMs) return;
+            
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - 90);
+            const cutoffStr = cutoffDate.toISOString().split('T')[0];
+            
+            for (let i = localStorage.length - 1; i >= 0; i--) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('gym4_reports_')) {
+                    const dateStr = key.replace('gym4_reports_', '');
+                    if (dateStr < cutoffStr) localStorage.removeItem(key);
+                }
+            }
+            
+            localStorage.setItem('gym4_last_cleanup', now.toString());
+        } catch (e) {
+            console.warn('Cleanup failed:', e);
+        }
+    },
 
-        // Initialize Firebase on first load
+    async loadData() {
+        const isAutoRefresh = !state.isLoading; // Перевірка чи це автооновлення
+        const scrollPos = isAutoRefresh ? window.scrollY : 0; // Зберегти позицію
+        
+        state.isLoading = true;
+        if (!isAutoRefresh) {
+            this.updateOnlineStatus(true);
+            this.render();
+        }
+
         if (!db) {
             const initialized = initFirebase();
             if (!initialized) {
@@ -158,8 +239,17 @@ const app = {
             state.canteenPin = pin;
 
             const today = this.getTodayISO();
-            const todayReports = await api.getReports(today);
-            state.reports = todayReports;
+            
+            if (isAutoRefresh) {
+                // Автооновлення - тільки сьогодні
+                const todayReports = await api.getReports(today);
+                state.reports = todayReports;
+            } else {
+                // Перше завантаження - історія за 60 днів
+                const allReports = await api.getAllRecentReports(60);
+                state.reports = allReports.filter(r => r.date === today);
+                state.history = allReports.filter(r => r.date !== today);
+            }
 
             this.updateOnlineStatus(true);
         } catch (e) {
@@ -167,8 +257,37 @@ const app = {
             this.updateOnlineStatus(false);
         } finally {
             state.isLoading = false;
-            this.render();
+            if (isAutoRefresh) {
+                this.updateContent(); // Оновити тільки контент
+                window.scrollTo(0, scrollPos); // Повернути скрол
+            } else {
+                this.render();
+            }
         }
+    },
+
+    updateContent() {
+        // Оновлення тільки контенту без перебудови всієї сторінки
+        const mainContent = document.getElementById('mainContent');
+        if (!mainContent) return;
+        
+        const currentScrollPos = window.scrollY;
+        
+        switch (state.role) {
+            case 'TEACHER':
+                mainContent.innerHTML = teacherView.render();
+                break;
+            case 'CANTEEN':
+                mainContent.innerHTML = canteenView.render();
+                canteenView.attachEvents();
+                break;
+            case 'ADMIN':
+                mainContent.innerHTML = adminView.render();
+                adminView.attachEvents();
+                break;
+        }
+        
+        window.scrollTo(0, currentScrollPos);
     },
 
     startAutoRefresh() {
@@ -479,7 +598,7 @@ const canteenView = {
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">${m === 'grid' ? '<rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect>' : m === 'report' ? '<path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"></path>' : '<line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line>'}</svg>
             </button>`).join('')}</div></div><div class="controls-right">
             <button class="btn btn-success" onclick="canteenView.exportCSV()"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg><span>Завантажити звіт</span></button>
-            <button class="btn btn-primary" onclick="window.print()"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg><span>Друк</span></button>
+            <button class="btn btn-primary" onclick="canteenView.viewMode==='month'?canteenView.printMonthly():window.print()"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg><span>Друк</span></button>
             </div></div>${this.viewMode === 'grid' ? this.renderGrid(currentReports) : this.renderReport(currentReports, allReports)}</div>`;
     },
     renderGrid(reports) {
@@ -514,9 +633,6 @@ const canteenView = {
         let grandTotal = 0;
         const classes = state.classes.filter(c => this.activeShift === 0 || c.shift === this.activeShift).sort((a,b) => a.className.localeCompare(b.className, 'uk'));
         
-        // Додати клас для landscape орієнтації при друці
-        document.body.classList.add('print-landscape');
-        
         return `<div class="report-container"><div class="report-content"><div class="report-title">
             <h2>Звіт по харчуванню (місячний) - ${date.toLocaleString('uk-UA', {month: 'long', year: 'numeric'})}</h2>
             <p>Гімназія №4 | ${this.activeShift === 0 ? 'Усі класи' : this.activeShift + ' зміна'}</p></div>
@@ -539,17 +655,64 @@ const canteenView = {
     },
     setShift(shift) { this.activeShift = shift; app.render(); },
     setViewMode(mode) { 
-        // Видалити клас landscape при зміні режиму
-        document.body.classList.remove('print-landscape');
+        document.body.classList.remove('print-monthly-landscape', 'print-landscape');
         this.viewMode = mode; 
         app.render(); 
     },
-    setDate(date) { this.selectedDate = date; app.render(); },
+    setDate(date) { 
+        this.selectedDate = date;
+        this.loadDateReports(date);
+    },
+    async loadDateReports(date) {
+        // Перевірити чи є дані в history
+        const hasData = [...state.reports, ...state.history].some(r => r.date === date);
+        if (!hasData) {
+            // Завантажити якщо немає
+            const dateReports = await api.getReports(date);
+            if (dateReports.length > 0) {
+                state.history.push(...dateReports);
+            }
+        }
+        app.render();
+    },
     changeMonth(offset) {
         const d = new Date(this.selectedDate);
         d.setMonth(d.getMonth() + offset);
         this.selectedDate = d.toISOString().split('T')[0];
+        this.loadMonthReports(d);
+    },
+    async loadMonthReports(date) {
+        const year = date.getFullYear();
+        const month = date.getMonth();
+        const days = new Date(year, month + 1, 0).getDate();
+        
+        // Завантажити всі дні місяця якщо немає
+        const promises = [];
+        for (let day = 1; day <= days; day++) {
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const hasData = [...state.reports, ...state.history].some(r => r.date === dateStr);
+            if (!hasData) {
+                promises.push(api.getReports(dateStr));
+            }
+        }
+        
+        if (promises.length > 0) {
+            const results = await Promise.all(promises);
+            results.forEach(dayReports => {
+                if (dayReports.length > 0) {
+                    state.history.push(...dayReports);
+                }
+            });
+        }
+        
         app.render();
+    },
+    printMonthly() {
+        // Додати клас для landscape
+        document.body.classList.add('print-monthly-landscape');
+        window.print();
+        // Видалити після друку
+        setTimeout(() => document.body.classList.remove('print-monthly-landscape'), 100);
     },
     exportCSV() {
         let csv = "\uFEFF"; // UTF-8 BOM
@@ -667,11 +830,68 @@ const adminView = {
             }).join('')}</div></div>`;
     },
     renderSecurity() {
+        const storageSize = this.getStorageSize();
+        const reportCount = this.getReportsCount();
+        const lastCleanup = localStorage.getItem('gym4_last_cleanup');
+        const lastCleanupDate = lastCleanup ? new Date(parseInt(lastCleanup)).toLocaleDateString('uk-UA') : 'Ніколи';
+        
         return `<div class="security-container"><div class="security-card"><h3>
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg> PIN-коди</h3>
             <div class="security-fields"><div class="security-field editable"><label>PIN для Їдальні</label>
             <input type="text" maxlength="4" value="${state.canteenPin}" oninput="adminView.updateCanteenPin(this.value.replace(/\\D/g,''))"></div>
-            <div class="security-field readonly"><label>PIN Адміністратора</label><p>1312</p></div></div></div></div>`;
+            <div class="security-field readonly"><label>PIN Адміністратора</label><p>1312</p></div></div></div>
+            
+            <div class="security-card" style="margin-top:1.5rem;"><h3>
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg> Локальне сховище</h3>
+            <div class="security-fields"><div style="padding:1rem;background:var(--slate-50);border-radius:1rem;">
+            <p style="font-size:0.75rem;margin-bottom:0.5rem;"><strong>Використано:</strong> ${storageSize}</p>
+            <p style="font-size:0.75rem;margin-bottom:0.5rem;"><strong>Звітів у кеші:</strong> ${reportCount}</p>
+            <p style="font-size:0.75rem;margin-bottom:0.5rem;"><strong>Останнє очищення:</strong> ${lastCleanupDate}</p>
+            <p style="font-size:0.625rem;color:var(--slate-400);margin-top:1rem;">Автоочищення: кожні 7 днів, видаляє дані старше 90 днів</p>
+            <button onclick="adminView.forceCleanup()" class="btn btn-primary" style="width:100%;margin-top:0.5rem;">Примусове очищення</button>
+            <button onclick="adminView.clearOldCache()" class="btn btn-primary" style="width:100%;margin-top:0.5rem;">Видалити старше N днів</button>
+            </div></div></div></div>`;
+    },
+    getStorageSize() {
+        let total = 0;
+        for (let key in localStorage) {
+            if (localStorage.hasOwnProperty(key)) {
+                total += localStorage[key].length + key.length;
+            }
+        }
+        return (total / 1024).toFixed(2) + ' KB';
+    },
+    getReportsCount() {
+        let count = 0;
+        for (let key in localStorage) {
+            if (key.startsWith('gym4_reports_')) count++;
+        }
+        return count;
+    },
+    clearOldCache() {
+        const days = prompt('Видалити дані старше скількох днів?', '90');
+        if (!days) return;
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - parseInt(days));
+        const cutoffStr = cutoffDate.toISOString().split('T')[0];
+        let deleted = 0;
+        const keysToDelete = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('gym4_reports_')) {
+                const dateStr = key.replace('gym4_reports_', '');
+                if (dateStr < cutoffStr) keysToDelete.push(key);
+            }
+        }
+        keysToDelete.forEach(key => { localStorage.removeItem(key); deleted++; });
+        alert(`Видалено ${deleted} застарілих записів`);
+        app.render();
+    },
+    forceCleanup() {
+        app.cleanupOldData();
+        localStorage.setItem('gym4_last_cleanup', Date.now().toString());
+        alert('Очищення виконано');
+        app.render();
     },
     setTab(tab) { this.activeTab = tab; app.render(); },
     updateForm(field, value) { this.newClass[field] = value; },
